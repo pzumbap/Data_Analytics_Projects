@@ -1,0 +1,404 @@
+---
+title: "Classification and GLM"
+author: "Pablo X Zumba"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+Download the file "TelcoChurn.xlsx".  The file contains data from a sample of 7043 subscribers of telephone and/or Internet Services for a large telco.Create three separate models to understand the predictors of churn of:
+- (i) subscribers of telephone services 
+- (ii) subscribers of internet services
+- (iii) people who subscribe to both services
+
+What predictors do you think contribute to the churn of (i) only telephone customers, (ii) only Internet service customers, and (iii) customers who subscribe to both phone and Internet services? Explain the rationale for your answer.
+
+Create training and test data sets with a 75:25 split using a random seed of the last 4 digits of your U-number to set the random split. Use the training data to train three logit models with the variables you identified in Question 2. Combine the outputs of the three modes using stargazer.
+
+What are the top three predictors of churn of (i) only telephone customers, (ii) only Internet service customers, and (iii) customers who subscribe to both phone and Internet services. Explain using marginal effects how much each predictor contributes to churn occurrence.
+
+Fit your models using test data, and compute recall, precision, F1-score, and AUC values for each of your three models. Create a table with these values.
+
+Analyze the data carefully (data definitions are provided in the second worksheet of the Excel file). Submit your results in the form of a nicely formatted Word (or PDF) file and your R code as two separate files.
+
+
+## Preprocessing
+```{r}
+rm(list=ls())
+df=rio::import("TelcoChurn.xlsx", sheet="Data")
+colnames(df)=tolower(make.names(colnames(df)))
+#str(df)
+attach(df);
+```
+## Cleaning, processing, and transforming data
+```{r}
+df$customerid <- NULL                                      # Drop id column
+df$paperlessbilling <- NULL                               # Drop paperlessbilling column
+df$paymentmethod <- NULL                                  # Drop paymentmethod column
+df$gender=as.factor(df$gender)
+df$partner=as.factor(df$partner)
+df$dependents=as.factor(df$dependents)
+df$phoneservice=as.factor(df$phoneservice)
+df$multiplelines=as.factor(df$multiplelines)
+df$internetservice=as.factor(df$internetservice)
+df$onlinesecurity=as.factor(df$onlinesecurity)
+df$onlinebackup=as.factor(df$onlinebackup)
+df$deviceprotection=as.factor(df$deviceprotection)
+df$techsupport=as.factor(df$techsupport)
+df$streamingtv=as.factor(df$streamingtv)
+df$streamingmovies=as.factor(df$streamingmovies)
+df$contract=as.factor(df$contract)
+df$churn=as.factor(df$churn)
+colSums(is.na(df))
+df <- df[complete.cases(df), ]                            # Drop incomplete rows
+```
+## Exploring data
+```{r}
+#Exploring each variable:
+table(gender)#There are 67 more males than females. Pretty fair.
+table(seniorcitizen)#About 19.35% of the population are Senior Citizens
+table(partner)#About 51% of the population does not have a partner.
+table(dependents)#70% of the population does not have dependents.
+hist(tenure, breaks = 100)#Not normally distributed. 613 customers have been with the company for one month, and 362 have been with the company for 72 months.
+table(phoneservice)# 90% of the population has phone service.
+table(multiplelines)# 48% has no multiple lines, 42% does have multiple lines and the rest No phoServ
+table(internetservice)#FiberOp=43%, DSL=34%, NO=21%
+table(onlinesecurity)#The majority does not have internet security. Only 28% does.
+table(onlinebackup)#The majority doesn't have online backup, only the 34% does
+table(deviceprotection)#The majority does not
+table(techsupport)#The majority does not
+table(streamingtv)#Almost equal number of people does and does not have streaming TV
+table(streamingmovies)#Almost equal number of people does and does not have streaming movies
+table(contract)#The majority is month-to-month contract, and there are sligtly more for 2 year contr.
+hist(monthlycharges, breaks = 100)#The majority is charged less than 30$ a month.
+hist(totalcharges, breaks = 200)#The majority is charged less than 1000$
+table(churn)# 27% have Churn (subscribers who discontinue their subscriptions within a given time period)
+```
+**Variables that make sense to include to predict Churn**
+See table 1 on final document.
+
+#Models for each scenario:
+**(i) subscribers of telephone services**
+##Importance of variables for subscribers of telephone services.
+```{r}
+churn_telephone = subset(df, phoneservice=="Yes")
+varImpTest = glm(churn ~ gender+seniorcitizen+partner+dependents+tenure+multiplelines+internetservice+onlinesecurity+onlinebackup+deviceprotection+techsupport+streamingtv+streamingmovies+contract+monthlycharges+totalcharges, family=binomial (link="logit"), data=churn_telephone)
+library(caret)
+churn_telephoneImp = varImp(varImpTest, scale=FALSE)
+churn_telephoneImp
+```
+Based on the table above, the top 4 important variables are: tenure, contract, totalcharges, and seniorcitizen so we will use those ones in new models for subscribers of telephone services. 
+```{r}
+churn_telephone = subset(df, phoneservice=="Yes") 
+
+linear_telephone <- lm(churn ~ tenure+contract+totalcharges+seniorcitizen, data=churn_telephone)
+#summary(linear_telephone)                              
+#plot(linear_telephone) 
+AIC(linear_telephone)
+
+logit_telephone = glm(churn ~ tenure+contract+totalcharges+seniorcitizen, family=binomial (link="logit"), data=churn_telephone)
+#summary(logit_telephone)
+
+probit_telephone <- glm(churn ~ tenure+contract+totalcharges+seniorcitizen, family=binomial (link="probit"), data=churn_telephone)
+#summary(probit_telephone)
+
+
+library(stargazer)
+#stargazer(churn_telephone, title="Descriptive Statistics of Churn Telephone", type="text")
+stargazer(linear_telephone, logit_telephone, probit_telephone, title="Churn for Telephone services", type="text")
+outfile = "churn_telephone.html"
+stargazer(linear_telephone, logit_telephone, probit_telephone, title="Churn for Telephone services", out=outfile)
+```
+
+**(ii) subscribers of internet services**
+##Importance of variables for subscribers of internet services.
+```{r}
+churn_internet = subset(df, internetservice!="No" & phoneservice=="No")
+varImpTestInternet = glm(churn ~ gender+seniorcitizen+partner+dependents+tenure+onlinesecurity+onlinebackup+deviceprotection+techsupport+streamingtv+streamingmovies+contract+monthlycharges+totalcharges, family=binomial (link="logit"), data=churn_internet)
+library(caret)
+churn_internetImp = varImp(varImpTestInternet, scale=FALSE)
+churn_internetImp
+```
+Interestingly, the top 4 important variables are: tenure, contract, dependents, and seniorcitizen so we will use those ones in new models for subscribers of internet services. 
+```{r}
+churn_internet = subset(df, internetservice!="No" & phoneservice=="No") 
+
+linear_internet <- lm(churn ~ tenure+contract+dependents+seniorcitizen, data=churn_internet)
+#summary(linear_internet)                              
+#plot(linear_internet) 
+AIC(linear_internet)
+
+logit_internet = glm(churn ~ tenure+contract+dependents+seniorcitizen, family=binomial (link="logit"), data=churn_internet)
+summary(logit_internet)
+
+probit_internet = glm(churn ~ tenure+contract+dependents+seniorcitizen, family=binomial (link="probit"), data=churn_internet)
+summary(probit_internet)
+
+#stargazer::stargazer(churn_internet, title="Descriptive Statistics of Churn internet", type="text")
+stargazer::stargazer(linear_internet, logit_internet, probit_internet, title="Churn for internet services", type="text")
+outfile = "churn_internet.html"
+stargazer::stargazer(linear_internet, logit_internet, probit_internet, title="Churn for internet services", out=outfile)
+```
+
+**(iii) people who subscribe to both services**
+##Importance of variables for subscribers of both services.
+```{r}
+churn_both = subset(df, internetservice!="No" & phoneservice=="Yes")
+varImpTestBoth = glm(churn ~ gender+seniorcitizen+partner+dependents+tenure+internetservice+onlinesecurity+onlinebackup+deviceprotection+techsupport+streamingtv+streamingmovies+contract+monthlycharges+totalcharges, family=binomial (link="logit"), data=churn_both)
+library(caret)
+churn_BothImp = varImp(varImpTestBoth, scale=FALSE)
+churn_BothImp
+```
+Top important variables are: tenure, contract, onlinesecurity, totalcharges, and onlinebackup
+```{r}
+churn_both = subset(df, internetservice!="No" & phoneservice=="Yes")
+
+linear_both <- lm(churn ~ tenure+contract+onlinesecurity+totalcharges+onlinebackup, data=churn_both)
+#summary(linear_both)                              
+#plot(linear_both) 
+AIC(linear_both)
+
+logit_both = glm(churn ~ tenure+contract+onlinesecurity+totalcharges+onlinebackup, family=binomial (link="logit"), data=churn_both)
+summary(logit_both)
+
+probit_both = glm(churn ~ tenure+contract+onlinesecurity+totalcharges+onlinebackup, family=binomial (link="probit"), data=churn_both)
+summary(probit_both)
+
+#stargazer::stargazer(churn_both, title="Descriptive Statistics of Churn both", type="text")
+stargazer::stargazer(linear_both, logit_both, probit_both, title="Churn for both services", type="text")
+outfile = "churn_both.html"
+stargazer::stargazer(linear_both, logit_both, probit_both, title="Churn for both services", out=outfile)
+```
+#_________________________________________________________________________________________________________________________
+#Predictions for Telephone Services.
+#_________________________________________________________________________________________________________________________
+
+#Predicted probabilities for Telephone service.
+```{r}
+pred_ols_telephone <- predict(linear_telephone, type="response")
+summary(pred_ols_telephone)
+
+pred_logit_telephone <- predict(logit_telephone, type="response")#Predicted values of y (in the scale of response variable, i.e. log-odds)
+summary(pred_logit_telephone)
+
+pred_probit_telephone <-predict(probit_telephone, type="response")
+summary(pred_probit_telephone)
+```
+
+#Marginal effects estimation for Telephone
+```{r}
+#head(predict(logit_telephone, type="link"))                 # Predicted values of y (in the scale of linear predictors)
+#dlogis(predict(logit_telephone, type="link"));  # Density function for the logistic distribution of y
+
+LogitScalar <- mean(dlogis(predict(logit_telephone, type="link")))  # Mean of density function of y
+LogitScalar*coef(logit_telephone)                                   # Marginal effects
+
+ProbitScalar <- mean(dnorm(predict(probit_telephone, type="link")))
+ProbitScalar*coef(probit_telephone)
+```
+
+# Accuracy estimation: Confusion matrix
+```{r}
+table(churn_telephone$churn, round(fitted(logit_telephone))) #Confusion Matrix using Logit Model
+table(churn_telephone$churn, round(fitted(probit_telephone)))#Confusion Matrix using Probit Model
+```
+
+# McFadden's Pseudo R-squared - Not usefull for this Assigment but good to have for future reference. 
+```{r}
+library(DescTools)
+PseudoR2(logit_telephone)
+PseudoR2(logit_telephone, c("McFadden", "Nagel"))
+```
+
+# Comparing models: Likelihood-ratio test for probit and logit. (Can't compare OLS vs GLM models so no Linear coparison)
+```{r}
+library(lmtest) 
+#lrtest(logit_telephone, linear_telephone)    # Can't compare OLS vs GLM models
+#null  <- glm(churn ~ 1, family=binomial (link="logit"), data=churn_telephone)
+#lrtest(null, logit_telephone)
+lrtest(logit_telephone, probit_telephone)
+```
+
+#Summarizing stats for each model on Telephone Services.
+```{r}
+# install.packages("rcompanion")
+library(rcompanion)
+nagelkerke(linear_telephone)
+nagelkerke(logit_telephone)
+nagelkerke(probit_telephone)
+```
+
+#Accuracy estimation using training and test datasets for Telephone
+```{r}
+set.seed(2888)
+trainIndex = sample(1:nrow(churn_telephone), size=round(0.75*nrow(churn_telephone)), replace=FALSE)
+train <- df[trainIndex,]
+test  <- df[-trainIndex,]
+dim(train); dim(test)
+
+logit  <- glm(churn ~ tenure+contract+totalcharges+seniorcitizen, family=binomial (link="logit"), data=train)
+test_x <- test[ , c(1:17)]
+predlogit <-predict(logit, newdata=test_x, type="response")
+predlogit <- ifelse(predlogit>0.5, 1, 0)
+
+ClassificationError <- mean(predlogit != test$churn) # Classification error
+print(paste("Accuracy = ", 1-ClassificationError))        # Accuraty rate
+table(test$churn, predlogit)                         # Confusion matrix
+
+```
+#AUC for Telephone
+```{r}
+# install.packages("ROCR")
+library(ROCR)
+pr <- prediction(predlogit, test$churn)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)                                                 # ROC plot: TP vs FP
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+#_________________________________________________________________________________________________________________________
+#Predictions for Internet Services.
+#_________________________________________________________________________________________________________________________
+#Predicted probabilities for internet service.
+```{r}
+pred_ols_internet <- predict(linear_internet, type="response")
+summary(pred_ols_internet)
+
+pred_logit_internet <- predict(logit_internet, type="response")#Predicted values of y (in the scale of response variable, i.e. log-odds)
+summary(pred_logit_internet)
+
+pred_probit_internet <-predict(probit_internet, type="response")
+summary(pred_probit_internet)
+```
+
+#Marginal effects estimation for internet
+```{r}
+#head(predict(logit_internet, type="link"))                 # Predicted values of y (in the scale of linear predictors)
+#dlogis(predict(logit_internet, type="link"));  # Density function for the logistic distribution of y
+
+LogitScalar <- mean(dlogis(predict(logit_internet, type="link")))  # Mean of density function of y
+LogitScalar*coef(logit_internet)                                   # Marginal effects
+
+ProbitScalar <- mean(dnorm(predict(probit_internet, type="link")))
+ProbitScalar*coef(probit_internet)
+```
+
+# Accuracy estimation: Confusion matrix
+```{r}
+table(churn_internet$churn, round(fitted(logit_internet))) #Confusion Matrix using Logit Model
+table(churn_internet$churn, round(fitted(probit_internet)))#Confusion Matrix using Probit Model
+```
+#Summarizing stats for each model on internet Services.
+```{r}
+# install.packages("rcompanion")
+library(rcompanion)
+nagelkerke(linear_internet)
+nagelkerke(logit_internet)
+nagelkerke(probit_internet)
+```
+
+#Accuracy estimation using training and test datasets for Internet.
+```{r}
+set.seed(2888)
+trainIndex = sample(1:nrow(churn_internet), size=round(0.75*nrow(churn_internet)), replace=FALSE)
+train <- df[trainIndex,]
+test  <- df[-trainIndex,]
+dim(train); dim(test)
+
+logit  <- glm(churn ~ tenure+contract+dependents+seniorcitizen, family=binomial (link="logit"), data=train)
+test_x <- test[ , c(1:17)]
+predlogit <-predict(logit, newdata=test_x, type="response")
+predlogit <- ifelse(predlogit>0.5, 1, 0)
+
+ClassificationError <- mean(predlogit != test$churn) # Classification error
+print(paste("Accuracy = ", 1-ClassificationError))        # Accuraty rate
+table(test$churn, predlogit)                         # Confusion matrix
+
+```
+#AUC for Telephone
+```{r}
+# install.packages("ROCR")
+library(ROCR)
+pr <- prediction(predlogit, test$churn)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)                                                 # ROC plot: TP vs FP
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+#_________________________________________________________________________________________________________________________
+#Predictions for both Services.
+#_________________________________________________________________________________________________________________________
+#Predicted probabilities for both service.
+```{r}
+pred_ols_both <- predict(linear_both, type="response")
+summary(pred_ols_both)
+
+pred_logit_both <- predict(logit_both, type="response")#Predicted values of y (in the scale of response variable, i.e. log-odds)
+summary(pred_logit_both)
+
+pred_probit_both <-predict(probit_both, type="response")
+summary(pred_probit_both)
+```
+
+#Marginal effects estimation for both
+```{r}
+#head(predict(logit_both, type="link"))                 # Predicted values of y (in the scale of linear predictors)
+#dlogis(predict(logit_both, type="link"));  # Density function for the logistic distribution of y
+
+LogitScalar <- mean(dlogis(predict(logit_both, type="link")))  # Mean of density function of y
+LogitScalar*coef(logit_both)                                   # Marginal effects
+
+ProbitScalar <- mean(dnorm(predict(probit_both, type="link")))
+ProbitScalar*coef(probit_both)
+```
+
+# Accuracy estimation: Confusion matrix
+```{r}
+table(churn_both$churn, round(fitted(logit_both))) #Confusion Matrix using Logit Model
+table(churn_both$churn, round(fitted(probit_both)))#Confusion Matrix using Probit Model
+```
+#Summarizing stats for each model on both Services.
+```{r}
+# install.packages("rcompanion")
+library(rcompanion)
+nagelkerke(linear_both)
+nagelkerke(logit_both)
+nagelkerke(probit_both)
+```
+
+#Accuracy estimation using training and test datasets for Internet.
+```{r}
+set.seed(2888)
+trainIndex = sample(1:nrow(churn_both), size=round(0.75*nrow(churn_both)), replace=FALSE)
+train <- df[trainIndex,]
+test  <- df[-trainIndex,]
+dim(train); dim(test)
+
+logit  <- glm(churn ~ tenure+contract+onlinesecurity+totalcharges+onlinebackup, family=binomial (link="logit"), data=train)
+test_x <- test[ , c(1:17)]
+predlogit <-predict(logit, newdata=test_x, type="response")
+predlogit <- ifelse(predlogit>0.5, 1, 0)
+
+ClassificationError <- mean(predlogit != test$churn) # Classification error
+print(paste("Accuracy = ", 1-ClassificationError))        # Accuraty rate
+table(test$churn, predlogit)                         # Confusion matrix
+
+```
+#AUC for Telephone
+```{r}
+# install.packages("ROCR")
+library(ROCR)
+pr <- prediction(predlogit, test$churn)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)                                                 # ROC plot: TP vs FP
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+**The Recall, Specificity, Precision, Accuracy, F1 Score, Misclassification/Error Rate, Prevalence, and AUC were calculated using the formulas given a Confusion matrix as input values**
+

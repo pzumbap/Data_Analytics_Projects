@@ -1,0 +1,100 @@
+---
+title: "Classification and GLM"
+author: "Pablo X Zumba"
+date: "`r Sys.Date()`"
+output: word_document
+---
+## Preprocessing
+```{r}
+rm(list=ls())
+df=rio::import("Lung_cancer.xlsx", sheet="Sheet1")
+colnames(df)=tolower(make.names(colnames(df)))
+#str(df)
+attach(df)
+```
+## Exploring Data
+```{r}
+table(treatment)# 69 had standard treatment and 68 test treatment. Pretty balanced.
+table(cell_type)#35 Squamous, 48 Small cell, 27 adeno, and 27 large cell type.
+hist(survival_in_days, breaks=30)#Non normally distributed, right skewed. Most did not survive over 400 days.
+table(status) # 128 dead and 9 censored. This is the EVENT.
+hist(karnofsky_score, breaks = 12) #Kinda bimodal. Most observations are between 50 and 80 score.
+hist(months_from_diagnosis,breaks=30) #Non normally distributed, right skewed. Most obs. are below 20 months.
+hist(age_in_years, breaks = 20)#Most obs are between 60 and 70 year old.
+table(prior_chemotherapy) # 97 did not have prior kimo and 40 did. 
+```
+# Kaplan-Meier non-parametric analysis
+1. We would like to see Kaplan-Meier survival graphs for patients with the test vs standard treatment. Use this data to assess:
+-**What are the probability that the patient will survive for 1 year (365 days) and 6 months (183 days) on the standard treatment vs the test treatment?**
+-**What is the mean number of days where a patient can be expected to survive if they are on the standard vs the test treatment?**
+Since we want to compare test vs standart treatment, we have to use Kaplan-Meier non-parametric analysis by treatment, using survival in days as Time and status as event.
+```{r}
+library(tidyverse)
+library(survival)
+km_treatment <- survfit(Surv(survival_in_days, status) ~ treatment, data = df)
+km_treatment
+#64 of 69 indivuals with standard treatmend died.
+#64 of 68 indivuals with test treatmend died.
+summary(km_treatment)
+#plot(km_treatment, xlab="Time", ylab="Survival Probability")
+#install.packages("survminer")
+library("survminer")
+ggsurvplot(
+  km_treatment,
+  fun = "pct",
+  linetype = "strata", # Change line type by groups
+  pval = FALSE, 
+  pval.method = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  fontsize = 3, # used in risk table
+  surv.median.line = "hv", # median horizontal and vertical ref lines
+  ggtheme = theme_light(),
+  palette = c("#E7B800", "#2E9FDF"),
+  title = "Kaplan-Meier Survival Function Estimate"
+)
+summary(km_treatment, time = 365)
+km_treatment %>% broom::tidy()
+summary(km_treatment, time = 183)
+```
+# What is the average number of days where a patient can be expected to survive if they are on the standard vs the test treatment?
+Assuming the patients are alive a the end of the time-frame window we can subset the data depending on the status and treatment.
+```{r}
+alive_standart_treat = subset(df, status == 0 & treatment == 1) #Status=censored and treatment=standard
+alive_test_treat = subset(df, status == 0 & treatment == 2) #Status=censored and treatment=standard
+mean(alive_standart_treat$survival_in_days) # = 105.4 days
+mean(alive_test_treat$survival_in_days)     # = 126 days
+log_standard_days=log(mean(alive_standart_treat$survival_in_days))
+log_test_days=log(mean(alive_test_treat$survival_in_days))
+hist(log(survival_in_days))
+abline(v=log_standard_days, col="blue")
+abline(v=log_test_days, col="red")
+```
+
+# 2. Comparison of different semi-parametric and parametric models.
+```{r}
+# Kaplan-Meier non-parametric analysis by group
+kaplan_meier <- survfit(Surv(survival_in_days, status) ~ treatment, data = df)
+summary(kaplan_meier)
+#plot(kaplan_meier, xlab="Survival in days", ylab="Survival Probability")
+
+# Cox proportional hazard model - coefficients and hazard rates
+cox <- coxph(Surv(survival_in_days, status) ~ treatment + months_from_diagnosis + age_in_years + prior_chemotherapy + karnofsky_score + cell_type, method="breslow", data = df)
+#summary(cox)
+
+# Exponential, Weibull, and log-logistic parametric model coefficients
+exponential <- survreg(Surv(survival_in_days, status) ~ treatment + months_from_diagnosis + age_in_years + prior_chemotherapy + karnofsky_score + cell_type, dist="exponential", data = df)
+#summary(exponential)
+
+weibull <- survreg(Surv(survival_in_days, status) ~ treatment + months_from_diagnosis + age_in_years + prior_chemotherapy + karnofsky_score + cell_type, dist="weibull", data = df)
+#summary(weibull)
+
+loglogistic <- survreg(Surv(survival_in_days, status) ~ treatment + months_from_diagnosis + age_in_years + prior_chemotherapy + karnofsky_score + cell_type, dist="loglogistic", data = df)
+#summary(loglogistic)
+
+library(stargazer)
+stargazer::stargazer(cox, exponential, weibull, loglogistic, title="Comparison of marginal effects using different models", type="text")
+outfile = "Survival_models.html"
+stargazer::stargazer(cox, exponential, weibull, loglogistic, title="Comparison of marginal effects using different survival models", out=outfile)
+```
+

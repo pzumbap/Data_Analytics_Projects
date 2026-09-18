@@ -1,0 +1,142 @@
+---
+title: "QMB 6304 Analytical Methods for Business | Module 8 Assignment"
+author: "Pablo Zumba | U54252888"
+date: "8/5/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+toc: yes
+---
+Write a simple R script to execute the following data preprocessing and statistical analysis.  
+Where required show analytical output and interpretations.
+
+## Preprocessing
+
+**Preprocessing 1**
+
+**1.	Load the file “6304 Module 8 Assignment Data.xlsx” into R.  This file contains information on 46,484 vehicles listed for sale on Craig’s List in the United States.  This will be your master data set.**
+
+```{r setup, include=TRUE}
+rm(list=ls())
+library(rio)
+library(car)
+library(moments)
+library(dplyr)
+set.seed(54252888)
+master_dataset=rio::import("6304 Module 8 Assignment Data.xlsx")
+colnames(master_dataset)=tolower(make.names(colnames(master_dataset)))
+str(master_dataset)
+```
+
+## Filtering and creating a stratified sample
+
+**Preprocessing 2**
+
+**2.	Create a single data frame for your analysis which will be your primary data set.  The primary data set should have the following characteristics:**
+
+* Only includes cars from the regions of Vermont, Appleton, green bay, Indianapolis, and Worcester.
+
+* Only includes cars with 4, 6, or 8-cylinder engines.
+
+* Includes all variables appearing in the master (N=46,484) data set.
+
+* Be a random sample of n=50 cars from each of the five regions listed above. This is referred to as a stratified sample.  (Remember to use the numerical portion of your U number as the random number seed.)
+
+```{r preprocessing}
+primary_dataset=subset(master_dataset,region=="vermont"|region=="appleton"|region=="green bay"
+                       |region=="indianapolis"|region=="worcester")
+unique(primary_dataset$region)
+primary_dataset=subset(primary_dataset,cylinders=="4"|cylinders=="6"|cylinders=="8")
+unique(primary_dataset$cylinders)
+stratifiedSample = primary_dataset %>%
+  group_by(region) %>%
+  sample_n(size=50)
+stratifiedSample$region=as.factor(stratifiedSample$region)
+stratifiedSample$cylinders=as.factor(stratifiedSample$cylinders)
+str(stratifiedSample)
+attach(stratifiedSample)
+```
+
+## Analysis 1 | Determining equality of variance
+
+**1.	Within your n=250 stratified sample, determine if asking.price has an equal variance across the five regions.  Briefly interpret your results**
+
+```{r analysis1}
+leveneTest(asking.price~region,data=stratifiedSample) 
+boxplot(asking.price~region,pch=19,col="red",
+        main="Asking price data grouped by Region")
+list_variance1=aggregate(asking.price~region,stratifiedSample,var)
+list_variance1[order(-list_variance1$asking.price),]
+```
+
+Interpretation: “asking.price” does not satisfy the equality of variances. Using the “asking.price” variable, we find the Lavene test produces a p-value of 0.2917% (less than 5%), which means we can reject the Null hypothesis in favor of the alternate hypothesis, namely that there is at least one variance in a region that is different from the other ones. According to the descending order variance table above, Vermont and Indianapolis regions have significantly different variances from the rest regions (this can also be seen in the boxplot).
+
+## Analysis 2 | One Way ANOVA: asking.price ~ region
+
+**2.	Conduct a one-way analysis of variance on your sample data with asking.price as the dependent variable and region as the independent variable.  Plot the results of a Tukey HSD test to show whether/where differences in asking.price among the regions exist.  Briefly explain the results shown in the plot, stating which pairs of regions do and do not appear to show significant mean differences in asking.price.  Make sure region names can be clearly and completely read on the appropriate axis of your plot.**
+
+```{r analysis2}
+analysis2.out=aov(asking.price~region,data=stratifiedSample)
+summary(analysis2.out)
+analysis2.out$coefficients
+list_means2=aggregate(asking.price~region,stratifiedSample,mean)
+list_means2[order(-list_means2$asking.price),]
+tukey1=TukeyHSD(analysis2.out)
+tukey1
+par(mar=c(5.1,10,4.1,2.1))
+plot(tukey1,las=1)
+par(mar=c(5.1,4.1,4.1,2.1))
+```
+
+Interpretation: Indianapolis seems to be the region where car-salesman ask less price on average compared to the other regions. The plot shows only two significant differences in the mean between Indianapolis-Green Bay and Worcester-Indianapolis. If the asking price variable is in USD, then the asking price in Green Bay is 6,310.82 USD higher than the asking price in Indianapolis. Worcester's asking price is 5,856.82 USD higher than Indianapolis'. 
+It appears that Vermont-Green Bay may have a significant difference in mean, but we won't know for sure until we have more observations to make a narrow confidence interval. The other combinations seem to have no difference in mean.
+
+## Analysis 3 | One Way ANOVA: odometer ~ region
+
+**3.	Repeat Steps 1 and 2 above using the odometer as the dependent variable and the region as the independent variable.  Again, briefly explain your analysis results and make sure region names can be clearly and completely read on the appropriate axis of your plot.**
+
+```{r analysis3}
+leveneTest(odometer~region,data=stratifiedSample) 
+boxplot(odometer~region,pch=19,col="red",
+        main="Odometer data grouped by Region")
+list_variance2=aggregate(odometer~region,stratifiedSample,var)
+list_variance2[order(-list_variance2$odometer),]
+analysis3.out=aov(odometer~region,data=stratifiedSample)
+summary(analysis3.out)
+analysis3.out$coefficients
+list_means3=aggregate(odometer~region,stratifiedSample,mean)
+list_means3[order(-list_means3$odometer),]
+tukey3=TukeyHSD(analysis3.out)
+tukey3
+par(mar=c(5.1,10,4.1,2.1))
+plot(tukey3,las=1)
+par(mar=c(5.1,4.1,4.1,2.1)) 
+```
+
+Interpretation: Odometer readings in the five regions do not differ significantly (p-value 12.3% > 5% | fail to reject the Null Hypothesis) according to the Lavene test. According to the plot "Odometer data grouped by Region", there are no significant differences in mean among the five regions. An Indianapolis-Green Bay combination has a very close difference in mean, but it needs to be analyzed using more observations to make a narrow confidence interval.
+
+## Analysis 4 | One Way ANOVA: asking.price ~ cylinders
+
+**4.	Referring to Steps 1 and 2 again, conduct a one-way analysis of variance using asking.price as the dependent variable and cylinders as the independent.  Show model output and explain your results as you did in Step 3.**
+
+```{r analysis4}
+leveneTest(asking.price~cylinders,data=stratifiedSample) 
+boxplot(asking.price~cylinders,pch=19,col="red",
+        main="Asking price data grouped by number of Cylinders")
+list_variance3=aggregate(asking.price~cylinders,stratifiedSample,var)
+list_variance3[order(-list_variance3$asking.price),]
+analysis4.out=aov(asking.price~cylinders,data=stratifiedSample)
+summary(analysis4.out)
+analysis4.out$coefficients
+list_means4=aggregate(asking.price~cylinders,stratifiedSample,mean)
+list_means4[order(-list_means4$asking.price),]
+tukey4=TukeyHSD(analysis4.out)
+tukey4
+par(mar=c(5.1,3,4.1,2.1))
+plot(tukey4,las=1)
+par(mar=c(5.1,4.1,4.1,2.1)) 
+```
+
+Interpretation: There is at least one significant variance in the number of cylinders versus the asking price based on the Lavene test (p-value = 1.491e-07). Based on the table and boxplot above, the variance appears to increase as the number of cylinders increases. The Tukey test also shows there is at least one significant difference in the mean by the number of cylinders (p-value = 1.17e-05). On the above plot "Asking price data grouped by the number of Cylinders", we can see that there is a significant difference between 8-4 cylinders and 8-6 cylinders. There is no significant difference in the mean when comparing 6-4 cylinders. The greater the number of cylinders, the greater the variance and the greater the difference in mean when compared to fewer cylinders.

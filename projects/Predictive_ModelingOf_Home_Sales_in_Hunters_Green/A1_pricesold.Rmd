@@ -1,0 +1,224 @@
+---
+title: "Statistical Data Mining | Hunters Green Home Sales"
+author: "Pablo X Zumba"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    df_print: paged
+  html_document:
+    df_print: paged
+toc: yes
+---
+Create statistical models to predict: (1) agent days on market (adom), which is essentially the number of days it took to close the sale from date of listing,  and (2) sale price of home (pricesold) based on relevant attributes in this data set.
+
+* Dependent variables: adom and saleprice
+* get rid of unnecessary variables
+* Make different datasets for each dependent variable by investigating what features are sufficient relevant to include
+* Change column names to something that makes more sense to you.
+* Don't forget to make categorical variable to factor variables.
+
+## Preprocessing and exploring data
+```{r setup, include=TRUE}
+rm(list=ls())
+df=rio::import("HuntersGreenHomeSales.xlsx", sheet="Data")
+colnames(df)=tolower(make.names(colnames(df)))
+#str(df)
+                      #Exploring each variable:
+#slnoskm is an identifier
+#table(df$status) #Unnecessary variable, all observations are "sold".
+#unique(df$address)#Address is not important because all houses belong to the same area code. 
+#table(df$beds) #Predominant of 3 and 4 bedroom houses.
+#table(df$bathsfull) #Predominant of 2 and 3 full bathroom houses.
+#table(df$bathshalf) #Something to keep in mind since most of houses has 0 half bathrooms.
+#table(df$bathstotal) #Predominant of 2 and 3 total bathrooms.
+#hist(df$sqft) #Square foot area of home. Right skewed. 
+#table(df$garages) #Predominant of 2 and 3 cars a garage can hold in the house.
+#table(df$roof)#Predominant of Shingle and Tile 
+#hist(df$lotsqft)#Square foot area of lot. Right skeewed.
+#hist(df$yrblt) #Most of housed were built before 1999. We can calculate how many year the house have for a more intuitive analysis. 
+#unique(df$pool) #Predominant of private pool
+#table(df$spa) #Most housed does have spa
+#unique(df$subdivn) #No relevant 
+#hist(df$adom_agentdaysonmarket) #First target DV. ADOM is the number of days a property has been listed with an individual agent. Right Skewed. Most of houses last few days on market.
+#hist(df$cdom_cumuldaysmls) #CDOM is the number of days the property has been listed in the MLS. Right skewed.
+#hist(df$listprice) #Very useful. 
+#hist(df$lppersqft) #List price per square foot, Normally distributed.
+#unique(df$pendingdate) #Not useful since we already have the number of days in market
+#hist(df$pricesold)# Second target variable. Right Skewed.
+#hist(df$sppersqft) #Sales price per square foot, Normally distributed
+#unique(df$datesold) #Not useful for this prediction since we already have adom and cdom for time spams.
+#table(df$splsale) #Not useful based on the table, since None has 453 observations so it would introduce bias to the prediction.
+
+```
+## Cleaning, transforming and filtering data based on predicting "adom" variable.
+```{r}
+#yrblt will be transformed into how many years the house is at then current year (2022)
+df['yrhouse'] = 2022 - df$yrblt
+#Replacing NA values on spa column. 
+df["spa"][is.na(df["spa"])] = FALSE
+#Changing column names on adom and cdom
+names(df)[names(df) == 'adom_agentdaysonmarket'] = 'adom'
+names(df)[names(df) == 'cdom_cumuldaysmls'] = 'cdom'
+#Checking Correlation between adom and cdom
+cor(df$adom,df$cdom)#0.8684742 adom and cdom are very correlated.
+#Based on the correlation that exists between adom & cdom (0.87), I decided to disregard cdom since it will introduce bias. From a business perspective and the concept and adom and cdom. The value of adom is always going to be less than cdom and since we're trying to predict adom, it does not make sense to me to take into account a variable that is always going to be greater and highly correlated. 
+#Changing name on lppersqft & sppersqft
+names(df)[names(df) == 'lppersqft'] = 'listprice_psqft'
+names(df)[names(df) == 'sppersqft'] = 'pricesold_psqft'
+#Checking if the house was sold in a price greater than listed.
+list_sold_price=ifelse(df$pricesold>df$listprice,"Yes","No")
+table(list_sold_price)#There are 42 houses that were sold in a price greater than listed.
+#Checking if the house was sold in a price greater than listed per square foot.
+list_sold_price_psqft=ifelse(df$pricesold_psqft>df$listprice_psqft,"Yes","No")
+table(list_sold_price_psqft)#Same results as the previous. 42 houses.
+#Based on what we have discover, we can create a new variable called "sale_ratio" and reduce the df. If the value is 1, that means the house was sold at the same price that it was originaly posted.
+#df['sale_ratio'] = df$pricesold / df$listprice
+#df['sale_ratio_psqft'] = df$pricesold_psqft / df$listprice_psqft
+#Checking the correlation between sale_ratio & sale_ratio_psqft
+#cor(df$sale_ratio,df$sale_ratio_psqft)#0.9999995
+#Since the correlation is almost 1, we can get rid of sale_ratio_psqft. In this way we ended up having 1 variable instead of 4. We replaced all prices sold and listed by sale_ratio.
+#Selectimg only the necessary columns based on "adom" variable for prediction.
+adom_df = df[, c('beds','bathstotal','sqft','garages','roof','lotsqft','yrhouse','pool','spa','listprice','pricesold','adom')]
+#We ended up having 11 variables/columns and need to convert categorical into factor variable.
+adom_df$roof=as.factor(adom_df$roof)
+adom_df$pool=as.factor(adom_df$pool)
+adom_df$spa=as.factor(adom_df$spa)
+#Only have 3 categorical variables: roof, pool and spa.
+attach(adom_df)
+str(adom_df)
+#View(adom_df)
+```
+
+## Descriptive analysis on adom
+```{r}
+#hist(adom)
+den <- density(adom_df$adom)                        # Density function
+#plot(den, main="Kernel Density of adom", col="red")
+hist(adom_df$adom, breaks=20, prob=T, main="Histogram of adom") #different knots to make it moreprecise
+lines(den, col="red")
+```
+## Descriptive analysis on pricesold
+```{r}
+den <- density(adom_df$pricesold)                        # Density function
+#plot(den, main="Kernel Density of adom", col="red")
+hist(adom_df$pricesold, breaks=20, prob=T, main="Histogram of pricesold") #different knots to make it moreprecise
+lines(den, col="red")
+```
+
+
+## Descriptive analysis on interactions between independent variables and adom
+```{r}
+#plot(adom ~ beds, data=adom_df)# 4 and 5 beds have the highest adom.
+#plot(adom ~ bathstotal, data=adom_df)#2 and 3 baths total are the most tend to have the lowes adom
+#plot(adom ~ sqft, data=adom_df)#The sqft between 1000-400 has a low adom. Based on research, this variable seems to ve very relecant for adom. 
+#plot(adom ~ garages, data=adom_df)#2 and 3 garages has more adom observations.
+#plot(adom ~ roof, data=adom_df)#Shingle and Tile are more related to adom. 
+#plot(adom ~ lotsqft, data=adom_df)#The lotsqft between 200-1200 has a low adom
+#plot(adom ~ yrhouse, data=adom_df)#Hard to see a relationship.
+#plot(adom ~ pool, data=adom_df)#Based on the median of the box plot, all types of pool appear to have a similar adom, so we can get rid of it.
+#plot(adom ~ spa, data=adom_df)#There is no significant difference between adom when the house has spa or does not.
+#plot(adom ~ sale_ratio, data=adom_df)#The majority of the houses have a sales ratio between 0.95 and 1, which means they sold faster when the sold price was slightly lower than the list price.
+```
+## Analyzing correlation between variables
+```{r}
+#plot(adom_df[,c(1,2,3,4,5,6,7,8,9,10,11)],pch=19,main="Continuous Variables only")
+#Garages can be consider as a categorical variable so it's not at the corrplot.
+judge_cor = round(cor(adom_df[,c(1,2,3,6,7,10,11,12)]),12)
+library(corrplot)
+corrplot(judge_cor,method="number")
+```
+- There is multicollinearity "correlation between predictor/independent variables" on variables that are related to space such as: sqft, lotsqft, and number of baths and beds, which make sense.
+- There is some positive correlation between the dependent variable "adom" with bathstotal, sqft, and lotsqft and negative correlation with sale_ratio. 
+- The negative correlation with sale_ratio could be explained because it's more likely to sold a house when the listing price is reduced.
+- Based on the correlation graph, we still need to get rid of some columns, speccially the ones that are related to space. 
+- yearhouse does not seem to be relevant any more.
+- We can combine beds, bathstotal and garages to get a total number useful spaces in the house. The variable is going to be called: bed_bad_gar
+- We can also combine the sqft & lotsqft variables to get a sqft_ratio.
+
+```{r}
+#Trying a different approach to eliminate more variables:
+#adom_df['bed_bad_gar'] = beds+bathstotal+garages
+#adom_df['sqft_ratio'] = lotsqft / sqft
+#adom_df = adom_df[, c('bed_bad_gar','roof','sqft_ratio','sale_ratio','adom')]
+#attach(adom_df)
+#str(adom_df)
+```
+#'pricesold' Models
+
+##OLS Estimation on "adom"
+**First Model ols1**
+```{r}
+ols1 <- lm(pricesold ~ bathstotal+sqft+yrhouse+garages+lotsqft,data=adom_df)
+summary(ols1)
+plot(ols1)
+```
+
+#Determining Importance of variables using "caret" package.
+```{r}
+library(caret)
+ols1Imp = varImp(ols1, scale=FALSE)
+ols1Imp
+```
+Based on the table above, the top 5 important variables are: sqft, pricesold, listprice, yrhouse, and garages so we will use those in the new model. 
+
+**Second Model using most important variables ols2**
+```{r}
+ols2 <- lm((pricesold) ~ bathstotal*sqft*yrhouse*lotsqft,data=adom_df)
+summary(ols2)
+plot(ols2)
+hist(ols2$residuals)
+```
+#Checkind independence in model 2. bathstotal,sqft,yrhouse,lotsqft
+```{r}
+#plot(adom_df[,c(1,2,3,4,5,6,7,8,9,10,11)],pch=19,main="Continuous Variables only")
+#Garages can be consider as a categorical variable so it's not at the corrplot.
+independence = round(cor(adom_df[,c(2,3,6,7,11)]),11)
+library(corrplot)
+corrplot(independence,method="number",is.corr = F)
+```
+**Third Model using most important variables ols3**
+```{r}
+ols3 <- lm(log(pricesold) ~ sqft*lotsqft+bathstotal,data=adom_df)
+summary(ols3)
+plot(ols3)
+hist(ols3$residuals)
+```
+
+#Testing Assumptions
+**Formal test for Normality**
+```{r}
+# Shapiro-Wilk's test of multivariate normality for small samples (n<2000)
+shapiro.test(ols2$res) #p-value<0.05 thus data is not normally distributed
+# Kolmogorov-Smirnov test:
+norm <- rnorm(200) #bencharm sample of two hund.
+ks.test(norm, ols2$res)#p-value<0.05 thus data is not normally distributed
+```
+- The data is not normally distributed.
+
+**Bartlett's test of heterokedasticity**
+```{r}
+library("car")
+bartlett.test(list(ols1$res, ols2$fit))#p-value<0.05 thus, at least two population variances differ
+```
+
+**Levene's test of homoskedasticity**
+```{r}
+#levene.df = data.frame(ols2$residuals, ols2$fitted.values)
+#leveneTest(ols2.residuals~ols2.fitted.values,data=levene.df,center=median)
+#Levene's test is not appropriate with quantitative explanatory variables.
+```
+
+**Durbin-Watson test of autocorrelation**
+```{r}
+library(lmtest)
+#d ~ [0, 4]; values around 2 (i.e., 1.5 to 2.5) suggests no autocorrelation
+dwtest(ols2)#DW close to 1.5; hence no autocorrelation but we're very close from autocorrelation
+```
+**Summarizing results using stargazer**
+```{r}
+library(stargazer)
+stargazer(ols1, ols2, ols3, title="Analysis of saleprice", type="text")
+outfile = "pricesoldStargazer.html"
+stargazer(ols1, ols2, ols3, title="OLS Analysis of saleprice", out=outfile)
+```
+
